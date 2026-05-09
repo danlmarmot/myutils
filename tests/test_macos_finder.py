@@ -4,12 +4,18 @@ from unittest.mock import patch, MagicMock, call
 
 import pytest
 
-from myutils.macos_finder import has_finder_tag, set_finder_tag, add_finder_tag, is_volume_mounted
+from myutils.macos_finder import (
+    has_finder_tag,
+    set_finder_tag,
+    add_finder_tag,
+    is_volume_mounted,
+)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_result(returncode: int, stdout: str = "", stderr: str = "") -> MagicMock:
     r = MagicMock()
@@ -40,21 +46,32 @@ def tmp_file(tmp_path):
 # has_finder_tag
 # ---------------------------------------------------------------------------
 
+
 class TestHasFinderTag:
     def test_tag_found_binary_plist(self, tmp_file):
-        with patch("subprocess.run", return_value=_make_result(0, _binary_plist_hex(["imported\n6"]))):
+        with patch(
+            "subprocess.run",
+            return_value=_make_result(0, _binary_plist_hex(["imported\n6"])),
+        ):
             assert has_finder_tag(tmp_file, "imported") is True
 
     def test_tag_not_found_binary_plist(self, tmp_file):
-        with patch("subprocess.run", return_value=_make_result(0, _binary_plist_hex(["reviewed\n6"]))):
+        with patch(
+            "subprocess.run",
+            return_value=_make_result(0, _binary_plist_hex(["reviewed\n6"])),
+        ):
             assert has_finder_tag(tmp_file, "imported") is False
 
     def test_tag_found_xml_plist(self, tmp_file):
-        with patch("subprocess.run", return_value=_make_result(0, _xml_plist_hex(["imported"]))):
+        with patch(
+            "subprocess.run", return_value=_make_result(0, _xml_plist_hex(["imported"]))
+        ):
             assert has_finder_tag(tmp_file, "imported") is True
 
     def test_tag_not_found_xml_plist(self, tmp_file):
-        with patch("subprocess.run", return_value=_make_result(0, _xml_plist_hex(["reviewed"]))):
+        with patch(
+            "subprocess.run", return_value=_make_result(0, _xml_plist_hex(["reviewed"]))
+        ):
             assert has_finder_tag(tmp_file, "imported") is False
 
     def test_xattr_nonzero_returns_false(self, tmp_file):
@@ -62,25 +79,41 @@ class TestHasFinderTag:
             assert has_finder_tag(tmp_file, "imported") is False
 
     def test_multiple_tags_target_present(self, tmp_file):
-        with patch("subprocess.run", return_value=_make_result(0, _binary_plist_hex(["reviewed\n6", "imported\n6"]))):
+        with patch(
+            "subprocess.run",
+            return_value=_make_result(
+                0, _binary_plist_hex(["reviewed\n6", "imported\n6"])
+            ),
+        ):
             assert has_finder_tag(tmp_file, "imported") is True
 
     def test_empty_tags_list(self, tmp_file):
-        with patch("subprocess.run", return_value=_make_result(0, _binary_plist_hex([]))):
+        with patch(
+            "subprocess.run", return_value=_make_result(0, _binary_plist_hex([]))
+        ):
             assert has_finder_tag(tmp_file, "imported") is False
 
     def test_tag_without_color_suffix(self, tmp_file):
         # Tags stored without the "\nN" color suffix
-        with patch("subprocess.run", return_value=_make_result(0, _binary_plist_hex(["imported"]))):
+        with patch(
+            "subprocess.run",
+            return_value=_make_result(0, _binary_plist_hex(["imported"])),
+        ):
             assert has_finder_tag(tmp_file, "imported") is True
 
     def test_substring_match_returns_true(self, tmp_file):
         # "import" is a substring of "imported" — current implementation uses `in`
-        with patch("subprocess.run", return_value=_make_result(0, _binary_plist_hex(["imported\n6"]))):
+        with patch(
+            "subprocess.run",
+            return_value=_make_result(0, _binary_plist_hex(["imported\n6"])),
+        ):
             assert has_finder_tag(tmp_file, "import") is True
 
     def test_case_sensitive(self, tmp_file):
-        with patch("subprocess.run", return_value=_make_result(0, _binary_plist_hex(["Imported\n6"]))):
+        with patch(
+            "subprocess.run",
+            return_value=_make_result(0, _binary_plist_hex(["Imported\n6"])),
+        ):
             assert has_finder_tag(tmp_file, "imported") is False
 
     def test_hex_with_extra_whitespace(self, tmp_file):
@@ -91,7 +124,9 @@ class TestHasFinderTag:
             assert has_finder_tag(tmp_file, "imported") is True
 
     def test_subprocess_called_with_correct_args(self, tmp_file):
-        with patch("subprocess.run", return_value=_make_result(0, _binary_plist_hex([]))) as mock_run:
+        with patch(
+            "subprocess.run", return_value=_make_result(0, _binary_plist_hex([]))
+        ) as mock_run:
             has_finder_tag(tmp_file, "imported")
             mock_run.assert_called_once_with(
                 ["xattr", "-px", "com.apple.metadata:_kMDItemUserTags", str(tmp_file)],
@@ -103,6 +138,7 @@ class TestHasFinderTag:
 # ---------------------------------------------------------------------------
 # set_finder_tag
 # ---------------------------------------------------------------------------
+
 
 class TestSetFinderTag:
     def test_returns_true(self, tmp_file):
@@ -130,18 +166,23 @@ class TestSetFinderTag:
 # add_finder_tag
 # ---------------------------------------------------------------------------
 
+
 class TestAddFinderTag:
     def test_adds_tag_to_file_with_no_existing_tags(self, tmp_file):
         read_result = _make_result(1)  # no existing xattr
         write_result = _make_result(0)
-        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+        with patch(
+            "subprocess.run", side_effect=[read_result, write_result]
+        ) as mock_run:
             assert add_finder_tag(tmp_file, "imported") is True
             assert mock_run.call_count == 2
 
     def test_adds_tag_preserving_existing_tags(self, tmp_file):
         read_result = _make_result(0, _binary_plist_hex(["reviewed\n0"]))
         write_result = _make_result(0)
-        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+        with patch(
+            "subprocess.run", side_effect=[read_result, write_result]
+        ) as mock_run:
             assert add_finder_tag(tmp_file, "imported") is True
             # The write call's hex arg should encode a plist containing both tags
             write_hex = mock_run.call_args[0][0][3]
@@ -173,6 +214,7 @@ class TestAddFinderTag:
 # ---------------------------------------------------------------------------
 # is_volume_mounted
 # ---------------------------------------------------------------------------
+
 
 class TestIsVolumeMounted:
     def setup_method(self):
