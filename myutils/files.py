@@ -1,6 +1,7 @@
 from datetime import datetime
 from functools import lru_cache
 import hashlib
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -24,6 +25,47 @@ def get_partial_sha(file_path, bytes_to_read=1024 * 256):
         data = f.read(bytes_to_read)
         sha256.update(data)
     return sha256.hexdigest()
+
+
+def get_volume_name(path: Path) -> str:
+    """Return the volume name for an absolute path.
+
+    Paths under /Volumes/<name> return <name>. All other paths return 'root'.
+    """
+    parts = path.parts
+    if len(parts) >= 3 and parts[1] == "Volumes":
+        return parts[2]
+    return "root"
+
+
+def copy_if_different(src: Path, dst: Path) -> bool:
+    """Copy src to dst only if their contents differ.
+
+    Creates parent directories of dst if they don't exist.
+    Preserves Finder tags (not copied by shutil.copy2).
+    Returns True if the file was copied, False if it was skipped.
+    """
+    if dst.exists() and get_partial_sha(src) == get_partial_sha(dst):
+        return False
+
+    if src.is_dir():
+        return False
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(src, dst)
+    result = subprocess.run(
+        ["xattr", "-px", "com.apple.metadata:_kMDItemUserTags", str(src)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        subprocess.run(
+            ["xattr", "-wx", "com.apple.metadata:_kMDItemUserTags", result.stdout.strip(), str(dst)],
+            capture_output=True,
+            text=True,
+        )
+    return True
 
 
 def get_files_with_tag(
@@ -188,6 +230,76 @@ def add_finder_tag(file_path: Path, tag_name: str) -> bool:
         print(
             f"Error writing Finder tag on {file_path}: {result.stderr}", file=sys.stderr
         )
+        return False
+
+    return True
+
+
+def get_finder_tags_with_prefix(file_path: Path, prefix: str) -> list[str]:
+    """Return the names of all Finder tags on file_path that start with prefix.
+
+    Returns an empty list if the file has no tags or none match.
+    Tag names are returned without the color suffix (e.g. "mytag", not "mytag\\n0").
+    """
+    result = subprocess.run(
+        ["xattr", "-px", "com.apple.metadata:_kMDItemUserTags", str(file_path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return []
+
+    try:
+        hex_data = "".join(result.stdout.split())
+        plist_data = bytes.fromhex(hex_data)
+        if plist_data.startswith(b"<?xml") or plist_data.startswith(b"<!DOCTYPE"):
+            tags = plistlib.loads(plist_data, fmt=plistlib.FMT_XML)
+        else:
+            tags = plistlib.loads(plist_data)
+    except Exception as e:
+        print(f"Error reading Finder tags from {file_path}: {e}", file=sys.stderr)
+        return []
+
+    return [t.split("\n")[0] for t in tags if t.split("\n")[0].startswith(prefix)]
+
+
+def remove_finder_tags_with_prefix(file_path: Path, prefix: str) -> bool:
+    """Remove all Finder tags whose name starts with prefix.
+
+    Returns True if the tag list was written back (even if unchanged), False on error.
+    If no tags exist on the file, returns True without writing.
+    """
+    result = subprocess.run(
+        ["xattr", "-px", "com.apple.metadata:_kMDItemUserTags", str(file_path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return True  # no tags present — nothing to remove
+
+    try:
+        hex_data = "".join(result.stdout.split())
+        plist_data = bytes.fromhex(hex_data)
+        if plist_data.startswith(b"<?xml") or plist_data.startswith(b"<!DOCTYPE"):
+            existing_tags = plistlib.loads(plist_data, fmt=plistlib.FMT_XML)
+        else:
+            existing_tags = plistlib.loads(plist_data)
+    except Exception as e:
+        print(f"Error reading Finder tags from {file_path}: {e}", file=sys.stderr)
+        return False
+
+    filtered = [t for t in existing_tags if not t.split("\n")[0].startswith(prefix)]
+
+    new_plist = plistlib.dumps(filtered, fmt=plistlib.FMT_BINARY)
+    hex_str = " ".join(f"{b:02x}" for b in new_plist)
+
+    write_result = subprocess.run(
+        ["xattr", "-wx", "com.apple.metadata:_kMDItemUserTags", hex_str, str(file_path)],
+        capture_output=True,
+        text=True,
+    )
+    if write_result.returncode != 0:
+        print(f"Error writing Finder tags on {file_path}: {write_result.stderr}", file=sys.stderr)
         return False
 
     return True

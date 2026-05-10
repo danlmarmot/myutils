@@ -5,10 +5,13 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from myutils.files import (
+    copy_if_different,
     get_files_with_tag,
+    get_finder_tags_with_prefix,
     has_finder_tag,
     set_finder_tag,
     add_finder_tag,
+    remove_finder_tags_with_prefix,
     is_volume_mounted,
 )
 
@@ -36,6 +39,95 @@ def _fake_volumes(*names: str):
         p.is_dir.return_value = True
         vols.append(p)
     return vols
+
+
+# ---------------------------------------------------------------------------
+# copy_if_different
+# ---------------------------------------------------------------------------
+
+
+class TestCopyIfDifferent:
+    def test_copies_when_dst_does_not_exist(self, tmp_path):
+        src = tmp_path / "src.txt"
+        src.write_bytes(b"hello")
+        dst = tmp_path / "dst.txt"
+        with patch("shutil.copy2") as mock_copy, \
+             patch("subprocess.run", return_value=_make_result(returncode=1)):
+            result = copy_if_different(src, dst)
+        assert result is True
+        mock_copy.assert_called_once_with(src, dst)
+
+    def test_skips_when_contents_identical(self, tmp_path):
+        src = tmp_path / "src.txt"
+        dst = tmp_path / "dst.txt"
+        src.write_bytes(b"same content")
+        dst.write_bytes(b"same content")
+        with patch("shutil.copy2") as mock_copy:
+            result = copy_if_different(src, dst)
+        assert result is False
+        mock_copy.assert_not_called()
+
+    def test_copies_when_contents_differ(self, tmp_path):
+        src = tmp_path / "src.txt"
+        dst = tmp_path / "dst.txt"
+        src.write_bytes(b"new content")
+        dst.write_bytes(b"old content")
+        with patch("shutil.copy2") as mock_copy, \
+             patch("subprocess.run", return_value=_make_result(returncode=1)):
+            result = copy_if_different(src, dst)
+        assert result is True
+        mock_copy.assert_called_once_with(src, dst)
+
+    def test_creates_missing_parent_dirs(self, tmp_path):
+        src = tmp_path / "src.txt"
+        src.write_bytes(b"hello")
+        dst = tmp_path / "a" / "b" / "dst.txt"
+        with patch("shutil.copy2"), \
+             patch("subprocess.run", return_value=_make_result(returncode=1)):
+            copy_if_different(src, dst)
+        assert dst.parent.exists()
+
+    def test_copies_finder_tags_when_present(self, tmp_path):
+        src = tmp_path / "src.txt"
+        dst = tmp_path / "dst.txt"
+        src.write_bytes(b"data")
+        tag_hex = "62 70 6c 69 73 74"  # arbitrary hex stand-in
+        read_result = _make_result(stdout=tag_hex, returncode=0)
+        write_result = _make_result(returncode=0)
+        with patch("shutil.copy2"), \
+             patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+            copy_if_different(src, dst)
+        read_call, write_call = mock_run.call_args_list
+        assert read_call[0][0] == [
+            "xattr", "-px", "com.apple.metadata:_kMDItemUserTags", str(src)
+        ]
+        assert write_call[0][0] == [
+            "xattr", "-wx", "com.apple.metadata:_kMDItemUserTags", tag_hex, str(dst)
+        ]
+
+    def test_skips_finder_tag_copy_when_src_has_none(self, tmp_path):
+        src = tmp_path / "src.txt"
+        dst = tmp_path / "dst.txt"
+        src.write_bytes(b"data")
+        no_tag_result = _make_result(returncode=1)
+        with patch("shutil.copy2"), \
+             patch("subprocess.run", return_value=no_tag_result) as mock_run:
+            copy_if_different(src, dst)
+        # Only the read xattr call; no write call
+        assert mock_run.call_count == 1
+
+    def test_finder_tag_hex_is_stripped_before_write(self, tmp_path):
+        src = tmp_path / "src.txt"
+        dst = tmp_path / "dst.txt"
+        src.write_bytes(b"data")
+        tag_hex_with_newline = "62 70 6c 69 73 74\n"
+        read_result = _make_result(stdout=tag_hex_with_newline, returncode=0)
+        write_result = _make_result(returncode=0)
+        with patch("shutil.copy2"), \
+             patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+            copy_if_different(src, dst)
+        write_hex_arg = mock_run.call_args_list[1][0][0][3]
+        assert not write_hex_arg.endswith("\n")
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +463,134 @@ class TestAddFinderTag:
         read_result = _make_xattr_result(0, "zz zz zz")
         with patch("subprocess.run", return_value=read_result):
             assert add_finder_tag(tmp_file, "imported") is False
+
+
+# ---------------------------------------------------------------------------
+# get_finder_tags_with_prefix
+# ---------------------------------------------------------------------------
+
+
+class TestGetFinderTagsWithPrefix:
+    def test_returns_matching_tag_names(self, tmp_file):
+        read_result = _make_xattr_result(0, _binary_plist_hex(["import_a\n0", "import_b\n0", "reviewed\n0"]))
+        with patch("subprocess.run", return_value=read_result):
+            result = get_finder_tags_with_prefix(tmp_file, "import_")
+        assert result == ["import_a", "import_b"]
+
+    def test_returns_empty_when_no_tags_on_file(self, tmp_file):
+        with patch("subprocess.run", return_value=_make_xattr_result(1)):
+            assert get_finder_tags_with_prefix(tmp_file, "import_") == []
+
+    def test_returns_empty_when_no_tags_match_prefix(self, tmp_file):
+        read_result = _make_xattr_result(0, _binary_plist_hex(["reviewed\n0", "done\n0"]))
+        with patch("subprocess.run", return_value=read_result):
+            assert get_finder_tags_with_prefix(tmp_file, "import_") == []
+
+    def test_returns_empty_on_corrupt_plist(self, tmp_file):
+        with patch("subprocess.run", return_value=_make_xattr_result(0, "zz zz zz")):
+            assert get_finder_tags_with_prefix(tmp_file, "import_") == []
+
+    def test_strips_color_suffix_from_names(self, tmp_file):
+        read_result = _make_xattr_result(0, _binary_plist_hex(["import_a\n6"]))
+        with patch("subprocess.run", return_value=read_result):
+            result = get_finder_tags_with_prefix(tmp_file, "import_")
+        assert result == ["import_a"]
+
+    def test_prefix_match_is_exact_not_substring(self, tmp_file):
+        read_result = _make_xattr_result(0, _binary_plist_hex(["notimport_x\n0", "import_y\n0"]))
+        with patch("subprocess.run", return_value=read_result):
+            result = get_finder_tags_with_prefix(tmp_file, "import_")
+        assert "notimport_x" not in result
+        assert "import_y" in result
+
+    def test_returns_all_matching_tags(self, tmp_file):
+        tags = ["import_a\n0", "import_b\n0", "import_c\n0"]
+        read_result = _make_xattr_result(0, _binary_plist_hex(tags))
+        with patch("subprocess.run", return_value=read_result):
+            result = get_finder_tags_with_prefix(tmp_file, "import_")
+        assert result == ["import_a", "import_b", "import_c"]
+
+    def test_empty_prefix_returns_all_tag_names(self, tmp_file):
+        read_result = _make_xattr_result(0, _binary_plist_hex(["alpha\n0", "beta\n0"]))
+        with patch("subprocess.run", return_value=read_result):
+            result = get_finder_tags_with_prefix(tmp_file, "")
+        assert result == ["alpha", "beta"]
+
+
+# ---------------------------------------------------------------------------
+# remove_finder_tags_with_prefix
+# ---------------------------------------------------------------------------
+
+
+class TestRemoveFinderTagsWithPrefix:
+    def test_removes_matching_tags(self, tmp_file):
+        read_result = _make_xattr_result(0, _binary_plist_hex(["import_a\n0", "import_b\n0", "reviewed\n0"]))
+        write_result = _make_xattr_result(0)
+        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+            assert remove_finder_tags_with_prefix(tmp_file, "import_") is True
+        write_hex = mock_run.call_args[0][0][3]
+        written_tags = plistlib.loads(bytes.fromhex("".join(write_hex.split())))
+        tag_names = [t.split("\n")[0] for t in written_tags]
+        assert "import_a" not in tag_names
+        assert "import_b" not in tag_names
+        assert "reviewed" in tag_names
+
+    def test_returns_true_when_no_tags_on_file(self, tmp_file):
+        with patch("subprocess.run", return_value=_make_xattr_result(1)) as mock_run:
+            assert remove_finder_tags_with_prefix(tmp_file, "import_") is True
+        assert mock_run.call_count == 1  # only the read; no write
+
+    def test_no_matching_tags_still_writes_back(self, tmp_file):
+        read_result = _make_xattr_result(0, _binary_plist_hex(["reviewed\n0", "done\n0"]))
+        write_result = _make_xattr_result(0)
+        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+            assert remove_finder_tags_with_prefix(tmp_file, "import_") is True
+        write_hex = mock_run.call_args[0][0][3]
+        written_tags = plistlib.loads(bytes.fromhex("".join(write_hex.split())))
+        tag_names = [t.split("\n")[0] for t in written_tags]
+        assert tag_names == ["reviewed", "done"]
+
+    def test_removes_all_tags_when_all_match(self, tmp_file):
+        read_result = _make_xattr_result(0, _binary_plist_hex(["import_a\n0", "import_b\n0"]))
+        write_result = _make_xattr_result(0)
+        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+            assert remove_finder_tags_with_prefix(tmp_file, "import_") is True
+        write_hex = mock_run.call_args[0][0][3]
+        written_tags = plistlib.loads(bytes.fromhex("".join(write_hex.split())))
+        assert written_tags == []
+
+    def test_returns_false_on_write_failure(self, tmp_file):
+        read_result = _make_xattr_result(0, _binary_plist_hex(["import_a\n0"]))
+        write_result = _make_xattr_result(1, stderr="permission denied")
+        with patch("subprocess.run", side_effect=[read_result, write_result]):
+            assert remove_finder_tags_with_prefix(tmp_file, "import_") is False
+
+    def test_returns_false_on_corrupt_plist(self, tmp_file):
+        read_result = _make_xattr_result(0, "zz zz zz")
+        with patch("subprocess.run", return_value=read_result):
+            assert remove_finder_tags_with_prefix(tmp_file, "import_") is False
+
+    def test_prefix_match_is_exact_not_substring(self, tmp_file):
+        # "pre_" prefix should not remove "notpre_tag"
+        read_result = _make_xattr_result(0, _binary_plist_hex(["notpre_tag\n0", "pre_tag\n0"]))
+        write_result = _make_xattr_result(0)
+        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+            remove_finder_tags_with_prefix(tmp_file, "pre_")
+        write_hex = mock_run.call_args[0][0][3]
+        written_tags = plistlib.loads(bytes.fromhex("".join(write_hex.split())))
+        tag_names = [t.split("\n")[0] for t in written_tags]
+        assert "notpre_tag" in tag_names
+        assert "pre_tag" not in tag_names
+
+    def test_uses_correct_xattr_key(self, tmp_file):
+        read_result = _make_xattr_result(0, _binary_plist_hex(["import_a\n0"]))
+        write_result = _make_xattr_result(0)
+        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+            remove_finder_tags_with_prefix(tmp_file, "import_")
+        read_cmd = mock_run.call_args_list[0][0][0]
+        write_cmd = mock_run.call_args_list[1][0][0]
+        assert read_cmd[2] == "com.apple.metadata:_kMDItemUserTags"
+        assert write_cmd[2] == "com.apple.metadata:_kMDItemUserTags"
 
 
 # ---------------------------------------------------------------------------
