@@ -26,7 +26,7 @@ def get_partial_sha(file_path, bytes_to_read=1024 * 256):
     return sha256.hexdigest()
 
 
-def get_files_with_finder_tag(
+def get_files_with_tag(
     tag: str,
     include_volumes: list[str] | None = None,
     exclude_volumes: list[str] | None = None,
