@@ -17,6 +17,7 @@ MONTH_NAMES = [
     "Dec",
 ]
 
+
 def parse_datetime(dt_str: str) -> datetime:
     for fmt in ["%Y:%m:%d %H:%M:%S%z", "%Y:%m:%d %H:%M:%S"]:
         try:

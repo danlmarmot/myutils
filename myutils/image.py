@@ -54,6 +54,7 @@ def image_set_original_filename(image_path: Path, original_filename: str) -> Non
         check=True,
     )
 
+
 def get_exif_data(image_file: Path) -> dict:
     # exiftool usage:
     # exiftool -a -G1 -s -n -struct /path/to/image.jpg
@@ -128,7 +129,6 @@ def exif_get_dimensions(exif_data: dict) -> tuple[int, int]:
         sys.exit(1)
 
     return width, height
-
 
 
 def exif_set_datetime(image_file: Path, dt: datetime) -> bool:
