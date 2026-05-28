@@ -55,7 +55,7 @@ def image_set_original_filename(image_path: Path, original_filename: str) -> Non
     )
 
 
-def get_exif_data(image_file: Path) -> dict:
+adef get_exif_data(image_file: Path, success: bool = True) -> dict:
     # exiftool usage:
     # exiftool -a -G1 -s -n -struct /path/to/image.jpg
     # -a - Allow duplicate tags (extract all)
@@ -91,10 +91,10 @@ def get_exif_data(image_file: Path) -> dict:
 
     if result.returncode != 0:
         print(f"Error running exiftool on {image_file}: {result.stderr}")
-        return {}
+        return {}, False
 
     exif_data = json.loads(result.stdout)[0]
-    return exif_data
+    return exif_data, success
 
 
 def exif_get_file_type(exif_data: dict) -> str:
@@ -178,8 +178,7 @@ def exif_set_datetime(image_file: Path, dt: datetime) -> bool:
             print(
                 f"Error setting EXIF on {image_file}: {result.stderr}", file=sys.stderr
             )
-            sys.exit(1)
-            # return False
+            return False
 
     except Exception as e:
         print(f"Error setting EXIF datetime: {e}", file=sys.stderr)

@@ -53,6 +53,7 @@ def copy_if_different(src: Path, dst: Path) -> bool:
 
     dst.parent.mkdir(parents=True, exist_ok=True)
 
+    print(f"Copying {src} to {dst} with Finder tags. ")
     shutil.copy2(src, dst)
     result = subprocess.run(
         ["xattr", "-px", "com.apple.metadata:_kMDItemUserTags", str(src)],
