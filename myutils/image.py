@@ -55,7 +55,7 @@ def image_set_original_filename(image_path: Path, original_filename: str) -> Non
     )
 
 
-adef get_exif_data(image_file: Path, success: bool = True) -> dict:
+def get_exif_data(image_file: Path, success: bool = True) -> dict:
     # exiftool usage:
     # exiftool -a -G1 -s -n -struct /path/to/image.jpg
     # -a - Allow duplicate tags (extract all)

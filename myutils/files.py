@@ -62,7 +62,13 @@ def copy_if_different(src: Path, dst: Path) -> bool:
     )
     if result.returncode == 0:
         subprocess.run(
-            ["xattr", "-wx", "com.apple.metadata:_kMDItemUserTags", result.stdout.strip(), str(dst)],
+            [
+                "xattr",
+                "-wx",
+                "com.apple.metadata:_kMDItemUserTags",
+                result.stdout.strip(),
+                str(dst),
+            ],
             capture_output=True,
             text=True,
         )
@@ -295,12 +301,21 @@ def remove_finder_tags_with_prefix(file_path: Path, prefix: str) -> bool:
     hex_str = " ".join(f"{b:02x}" for b in new_plist)
 
     write_result = subprocess.run(
-        ["xattr", "-wx", "com.apple.metadata:_kMDItemUserTags", hex_str, str(file_path)],
+        [
+            "xattr",
+            "-wx",
+            "com.apple.metadata:_kMDItemUserTags",
+            hex_str,
+            str(file_path),
+        ],
         capture_output=True,
         text=True,
     )
     if write_result.returncode != 0:
-        print(f"Error writing Finder tags on {file_path}: {write_result.stderr}", file=sys.stderr)
+        print(
+            f"Error writing Finder tags on {file_path}: {write_result.stderr}",
+            file=sys.stderr,
+        )
         return False
 
     return True

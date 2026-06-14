@@ -51,8 +51,10 @@ class TestCopyIfDifferent:
         src = tmp_path / "src.txt"
         src.write_bytes(b"hello")
         dst = tmp_path / "dst.txt"
-        with patch("shutil.copy2") as mock_copy, \
-             patch("subprocess.run", return_value=_make_result(returncode=1)):
+        with (
+            patch("shutil.copy2") as mock_copy,
+            patch("subprocess.run", return_value=_make_result(returncode=1)),
+        ):
             result = copy_if_different(src, dst)
         assert result is True
         mock_copy.assert_called_once_with(src, dst)
@@ -72,8 +74,10 @@ class TestCopyIfDifferent:
         dst = tmp_path / "dst.txt"
         src.write_bytes(b"new content")
         dst.write_bytes(b"old content")
-        with patch("shutil.copy2") as mock_copy, \
-             patch("subprocess.run", return_value=_make_result(returncode=1)):
+        with (
+            patch("shutil.copy2") as mock_copy,
+            patch("subprocess.run", return_value=_make_result(returncode=1)),
+        ):
             result = copy_if_different(src, dst)
         assert result is True
         mock_copy.assert_called_once_with(src, dst)
@@ -82,8 +86,10 @@ class TestCopyIfDifferent:
         src = tmp_path / "src.txt"
         src.write_bytes(b"hello")
         dst = tmp_path / "a" / "b" / "dst.txt"
-        with patch("shutil.copy2"), \
-             patch("subprocess.run", return_value=_make_result(returncode=1)):
+        with (
+            patch("shutil.copy2"),
+            patch("subprocess.run", return_value=_make_result(returncode=1)),
+        ):
             copy_if_different(src, dst)
         assert dst.parent.exists()
 
@@ -94,15 +100,26 @@ class TestCopyIfDifferent:
         tag_hex = "62 70 6c 69 73 74"  # arbitrary hex stand-in
         read_result = _make_result(stdout=tag_hex, returncode=0)
         write_result = _make_result(returncode=0)
-        with patch("shutil.copy2"), \
-             patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+        with (
+            patch("shutil.copy2"),
+            patch(
+                "subprocess.run", side_effect=[read_result, write_result]
+            ) as mock_run,
+        ):
             copy_if_different(src, dst)
         read_call, write_call = mock_run.call_args_list
         assert read_call[0][0] == [
-            "xattr", "-px", "com.apple.metadata:_kMDItemUserTags", str(src)
+            "xattr",
+            "-px",
+            "com.apple.metadata:_kMDItemUserTags",
+            str(src),
         ]
         assert write_call[0][0] == [
-            "xattr", "-wx", "com.apple.metadata:_kMDItemUserTags", tag_hex, str(dst)
+            "xattr",
+            "-wx",
+            "com.apple.metadata:_kMDItemUserTags",
+            tag_hex,
+            str(dst),
         ]
 
     def test_skips_finder_tag_copy_when_src_has_none(self, tmp_path):
@@ -110,8 +127,10 @@ class TestCopyIfDifferent:
         dst = tmp_path / "dst.txt"
         src.write_bytes(b"data")
         no_tag_result = _make_result(returncode=1)
-        with patch("shutil.copy2"), \
-             patch("subprocess.run", return_value=no_tag_result) as mock_run:
+        with (
+            patch("shutil.copy2"),
+            patch("subprocess.run", return_value=no_tag_result) as mock_run,
+        ):
             copy_if_different(src, dst)
         # Only the read xattr call; no write call
         assert mock_run.call_count == 1
@@ -123,8 +142,12 @@ class TestCopyIfDifferent:
         tag_hex_with_newline = "62 70 6c 69 73 74\n"
         read_result = _make_result(stdout=tag_hex_with_newline, returncode=0)
         write_result = _make_result(returncode=0)
-        with patch("shutil.copy2"), \
-             patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+        with (
+            patch("shutil.copy2"),
+            patch(
+                "subprocess.run", side_effect=[read_result, write_result]
+            ) as mock_run,
+        ):
             copy_if_different(src, dst)
         write_hex_arg = mock_run.call_args_list[1][0][0][3]
         assert not write_hex_arg.endswith("\n")
@@ -143,11 +166,12 @@ class TestGetFilesWithTag:
         @contextlib.contextmanager
         def _ctx():
             side_effects = [_make_result(out) for out in mdfind_outputs]
-            with patch(
-                "myutils.files.Path.iterdir", return_value=iter(volumes)
-            ) as mock_iter, patch(
-                "subprocess.run", side_effect=side_effects
-            ) as mock_run:
+            with (
+                patch(
+                    "myutils.files.Path.iterdir", return_value=iter(volumes)
+                ) as mock_iter,
+                patch("subprocess.run", side_effect=side_effects) as mock_run,
+            ):
                 yield mock_iter, mock_run
 
         return _ctx()
@@ -203,9 +227,13 @@ class TestGetFilesWithTag:
     def test_include_volumes_restricts_search(self):
         vols = _fake_volumes("Disk1", "Disk2", "Disk3")
         with self._patch(vols, ["", ""]) as (_, mock_run):
-            get_files_with_tag("red", include_volumes=["Disk1"], include_root_volume=False)
+            get_files_with_tag(
+                "red", include_volumes=["Disk1"], include_root_volume=False
+            )
         searched = [c[0][0][2] for c in mock_run.call_args_list]
-        assert all("/Volumes/Disk2" not in s and "/Volumes/Disk3" not in s for s in searched)
+        assert all(
+            "/Volumes/Disk2" not in s and "/Volumes/Disk3" not in s for s in searched
+        )
         assert any("/Volumes/Disk1" in s for s in searched)
 
     def test_include_volumes_none_searches_all(self):
@@ -226,14 +254,18 @@ class TestGetFilesWithTag:
     def test_exclude_volumes_skips_named_volume(self):
         vols = _fake_volumes("Disk1", "Disk2")
         with self._patch(vols, ["", ""]) as (_, mock_run):
-            get_files_with_tag("red", exclude_volumes=["Disk2"], include_root_volume=True)
+            get_files_with_tag(
+                "red", exclude_volumes=["Disk2"], include_root_volume=True
+            )
         searched = [c[0][0][2] for c in mock_run.call_args_list]
         assert all("/Volumes/Disk2" not in s for s in searched)
 
     def test_exclude_volumes_does_not_affect_root(self):
         vols = _fake_volumes("Disk1")
         with self._patch(vols, ["", ""]) as (_, mock_run):
-            get_files_with_tag("red", exclude_volumes=["Disk1"], include_root_volume=True)
+            get_files_with_tag(
+                "red", exclude_volumes=["Disk1"], include_root_volume=True
+            )
         searched = [c[0][0][2] for c in mock_run.call_args_list]
         assert "/" in searched
         assert all("/Volumes/Disk1" not in s for s in searched)
@@ -258,7 +290,10 @@ class TestGetFilesWithTag:
 
     def test_results_from_multiple_volumes_are_combined(self):
         vols = _fake_volumes("Disk1", "Disk2")
-        with self._patch(vols, ["/root_file.txt\n", "/Volumes/Disk1/a.jpg\n", "/Volumes/Disk2/b.jpg\n"]):
+        with self._patch(
+            vols,
+            ["/root_file.txt\n", "/Volumes/Disk1/a.jpg\n", "/Volumes/Disk2/b.jpg\n"],
+        ):
             results = get_files_with_tag("red", include_root_volume=True)
         assert Path("/root_file.txt") in results
         assert Path("/Volumes/Disk1/a.jpg") in results
@@ -275,7 +310,9 @@ class TestGetFilesWithTag:
 # ---------------------------------------------------------------------------
 
 
-def _make_xattr_result(returncode: int, stdout: str = "", stderr: str = "") -> MagicMock:
+def _make_xattr_result(
+    returncode: int, stdout: str = "", stderr: str = ""
+) -> MagicMock:
     r = MagicMock()
     r.returncode = returncode
     r.stdout = stdout
@@ -322,13 +359,15 @@ class TestHasFinderTag:
 
     def test_tag_found_xml_plist(self, tmp_file):
         with patch(
-            "subprocess.run", return_value=_make_xattr_result(0, _xml_plist_hex(["imported"]))
+            "subprocess.run",
+            return_value=_make_xattr_result(0, _xml_plist_hex(["imported"])),
         ):
             assert has_finder_tag(tmp_file, "imported") is True
 
     def test_tag_not_found_xml_plist(self, tmp_file):
         with patch(
-            "subprocess.run", return_value=_make_xattr_result(0, _xml_plist_hex(["reviewed"]))
+            "subprocess.run",
+            return_value=_make_xattr_result(0, _xml_plist_hex(["reviewed"])),
         ):
             assert has_finder_tag(tmp_file, "imported") is False
 
@@ -472,7 +511,9 @@ class TestAddFinderTag:
 
 class TestGetFinderTagsWithPrefix:
     def test_returns_matching_tag_names(self, tmp_file):
-        read_result = _make_xattr_result(0, _binary_plist_hex(["import_a\n0", "import_b\n0", "reviewed\n0"]))
+        read_result = _make_xattr_result(
+            0, _binary_plist_hex(["import_a\n0", "import_b\n0", "reviewed\n0"])
+        )
         with patch("subprocess.run", return_value=read_result):
             result = get_finder_tags_with_prefix(tmp_file, "import_")
         assert result == ["import_a", "import_b"]
@@ -482,7 +523,9 @@ class TestGetFinderTagsWithPrefix:
             assert get_finder_tags_with_prefix(tmp_file, "import_") == []
 
     def test_returns_empty_when_no_tags_match_prefix(self, tmp_file):
-        read_result = _make_xattr_result(0, _binary_plist_hex(["reviewed\n0", "done\n0"]))
+        read_result = _make_xattr_result(
+            0, _binary_plist_hex(["reviewed\n0", "done\n0"])
+        )
         with patch("subprocess.run", return_value=read_result):
             assert get_finder_tags_with_prefix(tmp_file, "import_") == []
 
@@ -497,7 +540,9 @@ class TestGetFinderTagsWithPrefix:
         assert result == ["import_a"]
 
     def test_prefix_match_is_exact_not_substring(self, tmp_file):
-        read_result = _make_xattr_result(0, _binary_plist_hex(["notimport_x\n0", "import_y\n0"]))
+        read_result = _make_xattr_result(
+            0, _binary_plist_hex(["notimport_x\n0", "import_y\n0"])
+        )
         with patch("subprocess.run", return_value=read_result):
             result = get_finder_tags_with_prefix(tmp_file, "import_")
         assert "notimport_x" not in result
@@ -524,9 +569,13 @@ class TestGetFinderTagsWithPrefix:
 
 class TestRemoveFinderTagsWithPrefix:
     def test_removes_matching_tags(self, tmp_file):
-        read_result = _make_xattr_result(0, _binary_plist_hex(["import_a\n0", "import_b\n0", "reviewed\n0"]))
+        read_result = _make_xattr_result(
+            0, _binary_plist_hex(["import_a\n0", "import_b\n0", "reviewed\n0"])
+        )
         write_result = _make_xattr_result(0)
-        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+        with patch(
+            "subprocess.run", side_effect=[read_result, write_result]
+        ) as mock_run:
             assert remove_finder_tags_with_prefix(tmp_file, "import_") is True
         write_hex = mock_run.call_args[0][0][3]
         written_tags = plistlib.loads(bytes.fromhex("".join(write_hex.split())))
@@ -541,9 +590,13 @@ class TestRemoveFinderTagsWithPrefix:
         assert mock_run.call_count == 1  # only the read; no write
 
     def test_no_matching_tags_still_writes_back(self, tmp_file):
-        read_result = _make_xattr_result(0, _binary_plist_hex(["reviewed\n0", "done\n0"]))
+        read_result = _make_xattr_result(
+            0, _binary_plist_hex(["reviewed\n0", "done\n0"])
+        )
         write_result = _make_xattr_result(0)
-        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+        with patch(
+            "subprocess.run", side_effect=[read_result, write_result]
+        ) as mock_run:
             assert remove_finder_tags_with_prefix(tmp_file, "import_") is True
         write_hex = mock_run.call_args[0][0][3]
         written_tags = plistlib.loads(bytes.fromhex("".join(write_hex.split())))
@@ -551,9 +604,13 @@ class TestRemoveFinderTagsWithPrefix:
         assert tag_names == ["reviewed", "done"]
 
     def test_removes_all_tags_when_all_match(self, tmp_file):
-        read_result = _make_xattr_result(0, _binary_plist_hex(["import_a\n0", "import_b\n0"]))
+        read_result = _make_xattr_result(
+            0, _binary_plist_hex(["import_a\n0", "import_b\n0"])
+        )
         write_result = _make_xattr_result(0)
-        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+        with patch(
+            "subprocess.run", side_effect=[read_result, write_result]
+        ) as mock_run:
             assert remove_finder_tags_with_prefix(tmp_file, "import_") is True
         write_hex = mock_run.call_args[0][0][3]
         written_tags = plistlib.loads(bytes.fromhex("".join(write_hex.split())))
@@ -572,9 +629,13 @@ class TestRemoveFinderTagsWithPrefix:
 
     def test_prefix_match_is_exact_not_substring(self, tmp_file):
         # "pre_" prefix should not remove "notpre_tag"
-        read_result = _make_xattr_result(0, _binary_plist_hex(["notpre_tag\n0", "pre_tag\n0"]))
+        read_result = _make_xattr_result(
+            0, _binary_plist_hex(["notpre_tag\n0", "pre_tag\n0"])
+        )
         write_result = _make_xattr_result(0)
-        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+        with patch(
+            "subprocess.run", side_effect=[read_result, write_result]
+        ) as mock_run:
             remove_finder_tags_with_prefix(tmp_file, "pre_")
         write_hex = mock_run.call_args[0][0][3]
         written_tags = plistlib.loads(bytes.fromhex("".join(write_hex.split())))
@@ -585,7 +646,9 @@ class TestRemoveFinderTagsWithPrefix:
     def test_uses_correct_xattr_key(self, tmp_file):
         read_result = _make_xattr_result(0, _binary_plist_hex(["import_a\n0"]))
         write_result = _make_xattr_result(0)
-        with patch("subprocess.run", side_effect=[read_result, write_result]) as mock_run:
+        with patch(
+            "subprocess.run", side_effect=[read_result, write_result]
+        ) as mock_run:
             remove_finder_tags_with_prefix(tmp_file, "import_")
         read_cmd = mock_run.call_args_list[0][0][0]
         write_cmd = mock_run.call_args_list[1][0][0]
