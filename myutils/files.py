@@ -270,6 +270,23 @@ def get_finder_tags_with_prefix(file_path: Path, prefix: str) -> list[str]:
     return [t.split("\n")[0] for t in tags if t.split("\n")[0].startswith(prefix)]
 
 
+def is_icloud_placeholder(path: Path) -> bool:
+    """Return True if path is an iCloud Drive file that has not been downloaded locally.
+
+    A placeholder file is 0 bytes and carries one of the iCloud xattrs that mark
+    evicted or not-yet-downloaded items.
+    """
+    import os
+
+    if path.stat().st_size != 0:
+        return False
+    icloud_attrs = {"com.apple.icloud.itemName", "com.apple.CloudDocs.item-info"}
+    try:
+        return bool(set(os.listxattr(str(path))) & icloud_attrs)
+    except OSError:
+        return False
+
+
 def remove_finder_tags_with_prefix(file_path: Path, prefix: str) -> bool:
     """Remove all Finder tags whose name starts with prefix.
 
