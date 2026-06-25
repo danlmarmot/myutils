@@ -55,7 +55,7 @@ def image_set_original_filename(image_path: Path, original_filename: str) -> Non
     )
 
 
-def get_exif_data(image_file: Path, success: bool = True) -> dict:
+def get_exif_data(image_file: Path, success: bool = True, timeout: int = 1) -> dict:
     # exiftool usage:
     # exiftool -a -G1 -s -n -struct /path/to/image.jpg
     # -a - Allow duplicate tags (extract all)
@@ -82,9 +82,11 @@ def get_exif_data(image_file: Path, success: bool = True) -> dict:
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=timeout,
         )
 
+    except subprocess.TimeoutExpired:
+        raise
     except Exception as e:
         print(e)
         sys.exit(1)
@@ -131,7 +133,7 @@ def exif_get_dimensions(exif_data: dict) -> tuple[int, int]:
     return width, height
 
 
-def exif_set_datetime(image_file: Path, dt: datetime) -> bool:
+def exif_set_datetime(image_file: Path, dt: datetime, timeout: int = 2) -> bool:
     """Set DateTimeOriginal on a given image file using exiftool."""
 
     try:
@@ -166,7 +168,7 @@ def exif_set_datetime(image_file: Path, dt: datetime) -> bool:
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=timeout,
         )
 
         if result.returncode == 0:
