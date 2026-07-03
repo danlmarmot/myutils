@@ -108,13 +108,14 @@ def exif_get_file_type(exif_data: dict) -> str:
     return file_type
 
 
-def exif_get_dimensions(exif_data: dict) -> tuple[int, int]:
+def exif_get_dimensions(exif_data: dict) -> tuple[int, int] | None:
     width, height = (
         int(
             exif_data.get("File:ImageWidth")  # iPhone 16 Pro
             or exif_data.get("QuickTime:ImageWidth")  # iPhone 16 Pro
             or exif_data.get("EXIF:ImageWidth")  # Sony-RX100M6
-            or exif_data.get("EXIF:ExifImageWidth")  # PNG screenshots
+            or exif_data.get("EXIF:ExifImageWidth")  # PNG screenshots with EXIF
+            or exif_data.get("PNG:ImageWidth")  # PNG without EXIF block
             or 0
         ),
         int(
@@ -122,13 +123,13 @@ def exif_get_dimensions(exif_data: dict) -> tuple[int, int]:
             or exif_data.get("QuickTime:ImageHeight")
             or exif_data.get("EXIF:ImageHeight")
             or exif_data.get("EXIF:ExifImageHeight")
+            or exif_data.get("PNG:ImageHeight")  # PNG without EXIF block
             or 0
         ),
     )
 
     if not width or not height:
-        print("Warning: Could not determine image dimensions.")
-        sys.exit(1)
+        return None
 
     return width, height
 
