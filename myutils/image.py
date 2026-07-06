@@ -134,6 +134,31 @@ def exif_get_dimensions(exif_data: dict) -> tuple[int, int] | None:
     return width, height
 
 
+def image_has_capture_one_color_label(
+    image_file: Path, color: str | None = None, timeout: int = 1
+) -> bool:
+    """Return True if the image has a color label set by CaptureOne.
+
+    CaptureOne stores color labels in XMP:Label as strings like
+    'Red', 'Yellow', 'Green', 'Blue', or 'Purple'.
+
+    If color is provided, returns True only if the label matches that color
+    (case-insensitive). If color is None, returns True if any label is set.
+    """
+    exif_data, success = get_exif_data(image_file, timeout=timeout)
+    if not success:
+        return False
+
+    label = (exif_data.get("XMP:Label") or "").strip()
+    if not label:
+        return False
+
+    if color is None:
+        return True
+
+    return label.lower() == color.lower()
+
+
 def exif_set_datetime(image_file: Path, dt: datetime, timeout: int = 2) -> bool:
     """Set DateTimeOriginal on a given image file using exiftool."""
 
